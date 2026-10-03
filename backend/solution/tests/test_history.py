@@ -19,7 +19,7 @@ from app.services.history_service import (
     Snapshot,
     filter_snapshots,
     load_history_file,
-    load_portfolio_ids,
+    load_portfolio_currencies,
     parse_range,
     range_start,
     utc_today,
@@ -168,8 +168,13 @@ def test_unreadable_history_file_raises_history_unavailable(tmp_path, content):
         load_history_file(path)
 
 
-def test_portfolio_ids_come_from_seed_json():
-    assert load_portfolio_ids(make_settings().seed_file) == {"P-9001", "P-9002", "P-EMPTY", "P-SINGLE"}
+def test_portfolios_and_their_currencies_come_from_seed_json():
+    assert load_portfolio_currencies(make_settings().seed_file) == {
+        "P-9001": "CAD",
+        "P-9002": "CAD",
+        "P-EMPTY": "CAD",
+        "P-SINGLE": "CAD",
+    }
 
 
 # --- HTTP ---
@@ -179,7 +184,9 @@ def test_portfolio_ids_come_from_seed_json():
 def client():
     app = create_app(make_settings())
     service = HistoryService(
-        {"P-9001": daily(401), "P-9002": daily(60)}, {"P-9001", "P-9002", "P-EMPTY"}, today=lambda: TODAY
+        {"P-9001": daily(401), "P-9002": daily(60)},
+        {"P-9001": "CAD", "P-9002": "CAD", "P-EMPTY": "CAD"},
+        today=lambda: TODAY,
     )
     app.dependency_overrides[get_history_service] = lambda: service
     with TestClient(app, raise_server_exceptions=False, headers=AUTH_HEADERS) as test_client:
@@ -197,7 +204,10 @@ def test_endpoint_returns_each_window(client, raw_range):
 
 def test_snapshots_have_the_documented_shape(client):
     response = client.get(HISTORY_URL.format("P-9001"), params={"range": "1D"})
-    assert response.json() == [{"date": "2026-10-02", "marketValue": 499.0}, {"date": "2026-10-03", "marketValue": 500.0}]
+    assert response.json() == [
+        {"date": "2026-10-02", "marketValue": 499.0, "currency": "CAD", "exchangeRate": 1.0},
+        {"date": "2026-10-03", "marketValue": 500.0, "currency": "CAD", "exchangeRate": 1.0},
+    ]
 
 
 def test_omitted_range_returns_all_history(client):
@@ -258,5 +268,5 @@ def test_configured_files_are_read_by_the_real_provider(tmp_path):
 
 def test_openapi_documents_the_range_parameter_and_every_error_status(client):
     operation = client.get("/openapi.json").json()["paths"]["/portfolios/{portfolio_id}/performance-history"]["get"]
-    assert [parameter["name"] for parameter in operation["parameters"]] == ["portfolio_id", "range"]
+    assert [parameter["name"] for parameter in operation["parameters"]] == ["portfolio_id", "range", "currency"]
     assert {"200", "400", "404", "503"} <= set(operation["responses"])

@@ -1,6 +1,6 @@
 # Portfolio Dashboard Backend (Python / FastAPI)
 
-Status: **Task 1 (Portfolio Metadata via CRM Integration)**, **Task 2 (Holdings)**, **Task 3 (Performance History)**, **Task 4 (Auth Middleware)** and **Task 5 (Asset Allocation)** are complete. Other tasks are not started yet. The code is structured for Task 9 (caching) to slot in; see "Extending" below.
+Status: **Task 1 (Portfolio Metadata via CRM Integration)**, **Task 2 (Holdings)**, **Task 3 (Performance History)**, **Task 4 (Auth Middleware)**, **Task 5 (Asset Allocation)** and **Task 7 (Currency Display)** are complete. Other tasks are not started yet. The code is structured for Task 9 (caching) to slot in; see "Extending" below.
 
 Working on this as a team? Read [TEAM-GUIDE.md](TEAM-GUIDE.md) first. It covers the pinned stack, who owns which files, coding conventions, and the decisions we need to agree on.
 
@@ -69,6 +69,7 @@ pytest -m integration         # only the live tests (start node backend/mock-crm
 | `tests/test_allocation.py` | Task 5: summing several holdings in one class and the zero-total guard without HTTP (made-up holdings), and the endpoint (P-9001 values and order in camelCase, single class at exactly `1.0`, `[]`, 404). |
 | `tests/test_api_docs.py` | The interactive docs: Swagger UI settings, no misleading 422s, and error examples that match real responses. |
 | `tests/test_auth.py` | Task 4: the header check (missing, malformed, wrong token, lowercase scheme, non-ASCII), rejection before any route logic runs, a sweep proving every non-public operation needs the token, exact public paths, the token coming from settings and never being logged, and the docs' Authorize button and 401 examples. |
+| `tests/test_currency.py` | Task 7: currency parsing and rates, USD on all three endpoints (money fields converted, quantities and percentages not), native values when omitted, totals agreeing across endpoints, 400 on every endpoint, null money fields, USD and unconvertible CRM accounts. |
 
 ## `GET /portfolios/{id}`
 
@@ -85,7 +86,8 @@ Successful response (`200`):
   "dayChangePercent": 0.0006134969325153375,
   "totalReturnSinceInception": 0.187,
   "asOf": "2026-10-03T16:00:00Z",
-  "warnings": []
+  "warnings": [],
+  "exchangeRate": 1.0
 }
 ```
 
@@ -124,7 +126,9 @@ Example (`P-9002`):
     "weightPercent": 1.0,
     "unrealizedGainLoss": 100.0,
     "dayChangeAmount": 500.0,
-    "dayChangePercent": null
+    "dayChangePercent": null,
+    "currency": "CAD",
+    "exchangeRate": 1.0
   }
 ]
 ```
@@ -209,8 +213,8 @@ curl -H 'Authorization: Bearer superday-demo-token' 'localhost:3000/portfolios/P
 
 ```json
 [
-  { "date": "2026-10-02", "marketValue": 48917.8 },
-  { "date": "2026-10-03", "marketValue": 48930.0 }
+  { "date": "2026-10-02", "marketValue": 48917.8, "currency": "CAD", "exchangeRate": 1.0 },
+  { "date": "2026-10-03", "marketValue": 48930.0, "currency": "CAD", "exchangeRate": 1.0 }
 ]
 ```
 
@@ -267,6 +271,35 @@ curl -H 'Authorization: Bearer superday-demo-token' localhost:3000/portfolios/P-
 - **No rounding**, the same as holdings.
 - **Empty vs unknown:** the seed's portfolio list decides whether an id exists, the same as holdings. A portfolio with no holdings returns `[]`.
 
+## Currency display: `?currency=CAD|USD` (Task 7)
+
+`GET /portfolios/{id}`, `GET /portfolios/{id}/holdings` and `GET /portfolios/{id}/performance-history` accept an optional `currency` parameter. Every response (each item, for the two array endpoints) says which currency its money is in and which rate was applied:
+
+```sh
+curl -H 'Authorization: Bearer superday-demo-token' 'localhost:3000/portfolios/P-9001/holdings?currency=USD'
+```
+
+```json
+[
+  { "ticker": "AAPL", "quantity": 120.0, "price": 166.075, "marketValue": 19929.0, "weightPercent": 0.5579, "currency": "USD", "exchangeRate": 0.73, "...": "..." }
+]
+```
+
+| Situation | Status | `error` |
+| --- | --- | --- |
+| `currency` isn't exactly `CAD` or `USD` (`details.allowed` lists them) | 400 | `unsupported_currency` |
+
+**Decisions:**
+
+- **What gets converted:** money only. That's `totalMarketValue` and `dayChangeAmount` on the portfolio; `costBasisPerShare`, `price`, `previousClosePrice`, `marketValue`, `unrealizedGainLoss` and `dayChangeAmount` on holdings; `marketValue` in history. Quantities and every percentage are unchanged.
+- **Omitted means native:** no `currency` (or the portfolio's own currency) returns unconverted values with `exchangeRate: 1.0`.
+- **The rate** is `CADtoUSD` from `seed.json` (0.73), read through `app/data/seed.py`. USD to CAD uses its inverse.
+- **No rounding:** every money field is multiplied by the same rate, so converted holdings still add up to the converted portfolio total (`P-9001`: 48930 CAD is 35718.9 USD on both endpoints). Clients round for display.
+- **Metadata on arrays:** `currency` and `exchangeRate` are added to each item, keeping the responses plain arrays as the requirements show.
+- **Exact match**, like `range`: `usd` or an empty `currency=` returns 400 rather than falling back. The parameter is checked before anything else is looked up, so a bad currency never calls the CRM.
+- **CRM accounts in another currency:** a USD account converts to CAD with the inverse rate. If the CRM reports a currency we have no rate for (say EUR), the values come back unconverted in that currency, with `exchangeRate: 1.0` and a warning, rather than failing the request.
+- **Task 9 can cache native data:** `PortfolioService.get_metadata` still returns unconverted CRM data; conversion happens afterwards in `get_portfolio`.
+
 ## Authentication (Task 4)
 
 Every endpoint except the health checks and the API docs needs a bearer token. For this exercise there's one hardcoded mock token, `superday-demo-token`; set `API_TOKEN` to change it.
@@ -309,7 +342,8 @@ app/
   auth.py                    Task 4: bearer-token middleware and the public paths
   openapi.py                 What /docs shows: overview, examples, Authorize button
   config.py                  Settings from env vars
-  models.py                  PortfolioMetadata, Holding, PerformanceSnapshot, AllocationEntry, ErrorResponse (camelCase on the wire)
+  models.py                  PortfolioMetadata, PortfolioResponse, Holding, PerformanceSnapshot, AllocationEntry, ErrorResponse (camelCase on the wire)
+  currency.py                Task 7: ?currency= parsing and CAD/USD rates
   errors.py                  Exception -> HTTP status + error body
   request_context.py         Request ids and logging
   dependencies.py            FastAPI dependency wiring
@@ -333,11 +367,12 @@ tests/                       pytest suites and fixtures/crm/
 ## Extending
 
 - **Task 9 (cache):** wrap `PortfolioService.get_metadata`. Cache the mapped `PortfolioMetadata` per id. On `CrmTimeout` or `CrmUnavailable` with an expired entry, serve it with `stale: true`. `CrmNotFound` and `CrmBadResponse` should probably not fall back to stale data; decide and document.
-- **Task 7 (currency):** convert in the route or service after mapping; `currency` is already in the response. For history, convert in `_to_response` in `app/services/history_service.py`, which builds every snapshot. For allocation, convert only `value`; `percent` is a ratio and doesn't change.
+- **Currency on allocation:** the requirements only ask for `?currency=` on the portfolio, holdings and history endpoints, so `/allocation` always uses the portfolio's native currency. To add it, convert only `value`; `percent` is a ratio and doesn't change.
 
 ## Unfinished / known limitations
 
-- Only Tasks 1-5 are implemented.
+- Only Tasks 1-5 and 7 are implemented.
 - Auth is one shared mock token, with no users, expiry or scopes (Task 4).
 - There's no caching yet (Task 9): every request calls the CRM.
-- Performance history is read once per process, so a regenerated file needs a restart. History values aren't converted to other currencies yet (Task 7).
+- Performance history is read once per process, so a regenerated file needs a restart.
+- Only CAD and USD are supported, with one fixed rate from the seed data.

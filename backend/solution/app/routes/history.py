@@ -1,5 +1,11 @@
 from fastapi import APIRouter, Depends, Path, Query
 
+from app.currency import (
+    CURRENCY_EXAMPLES,
+    CURRENCY_QUERY_DESCRIPTION,
+    UNSUPPORTED_CURRENCY_EXAMPLE,
+    parse_currency,
+)
 from app.dependencies import get_history_service
 from app.models import PerformanceSnapshot
 from app.openapi import error_doc, error_example
@@ -35,13 +41,15 @@ RANGE_EXAMPLES = {
     ),
     responses={
         400: error_doc(
-            "The id is not a valid portfolio id, or range is not one of the allowed values.",
+            "The id is not a valid portfolio id, range is not one of the allowed values, or currency is not CAD "
+            "or USD.",
             INVALID_ID_EXAMPLE,
             error_example(
                 "invalid_range",
                 "range must be one of 1D, 1M, YTD, 1Y, All.",
                 {"range": "1W", "allowed": ["1D", "1M", "YTD", "1Y", "All"]},
             ),
+            UNSUPPORTED_CURRENCY_EXAMPLE,
         ),
         404: error_doc("There is no portfolio with this id.", NOT_FOUND_EXAMPLE),
         503: error_doc(
@@ -58,7 +66,10 @@ async def get_performance_history(
         description="One of 1D, 1M, YTD, 1Y, All (exact match). Defaults to All. Every range ends today (UTC).",
         openapi_examples=RANGE_EXAMPLES,
     ),
+    currency: str | None = Query(
+        default=None, description=CURRENCY_QUERY_DESCRIPTION, openapi_examples=CURRENCY_EXAMPLES
+    ),
     service: HistoryService = Depends(get_history_service),
 ) -> list[PerformanceSnapshot]:
     validate_portfolio_id(portfolio_id)
-    return service.get_history(portfolio_id, parse_range(range_))
+    return service.get_history(portfolio_id, parse_range(range_), parse_currency(currency))

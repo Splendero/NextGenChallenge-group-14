@@ -171,6 +171,9 @@ The requirements leave these to us. Confirm each one together, change the row if
 | Token configuration | `API_TOKEN` setting, default `superday-demo-token`, stored as a `SecretStr` and never logged | 4 | |
 | Where currency metadata goes on array responses | Add `currency` and `exchangeRate` to each item, keeping the response a plain array as the spec shows | 7 | |
 | USD/CAD rate source | `exchangeRate` from `seed.json`, held in a small internal module | 7 | |
+| Rounding after conversion | None: every money field is multiplied by the same rate, so converted holdings still sum to the converted total | 7 | |
+| Is `currency` case-sensitive? | Yes, exact `CAD` or `USD`; anything else (including `usd` or empty) returns 400 `unsupported_currency` | 7 | |
+| CRM account in a currency with no rate (e.g. EUR) | Return it unconverted, with `exchangeRate: 1.0` and a warning | 7 | |
 | Cache TTL | 30 seconds, configurable with `CACHE_TTL_SECONDS` | 9 | |
 | A successful CRM call after a stale period | Replaces the cache entry and resets `stale: false` | 9 | |
 | Do 404 or bad CRM data fall back to the stale cache? | No; only timeouts and outages (503/504) do | 9 | |

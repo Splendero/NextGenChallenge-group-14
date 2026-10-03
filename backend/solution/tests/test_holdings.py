@@ -9,7 +9,7 @@ from tests.conftest import AUTH_HEADERS, make_settings
 HOLDING_FIELDS = {
     "ticker", "name", "assetClass", "quantity", "costBasisPerShare", "price",
     "previousClosePrice", "marketValue", "weightPercent", "unrealizedGainLoss",
-    "dayChangeAmount", "dayChangePercent",
+    "dayChangeAmount", "dayChangePercent", "currency", "exchangeRate",
 }
 
 

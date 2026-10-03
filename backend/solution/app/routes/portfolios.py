@@ -1,10 +1,16 @@
 import re
 
-from fastapi import APIRouter, Depends, Path
+from fastapi import APIRouter, Depends, Path, Query
 
+from app.currency import (
+    CURRENCY_EXAMPLES,
+    CURRENCY_QUERY_DESCRIPTION,
+    UNSUPPORTED_CURRENCY_EXAMPLE,
+    parse_currency,
+)
 from app.dependencies import get_portfolio_service
 from app.errors import InvalidPortfolioId
-from app.models import PortfolioMetadata
+from app.models import PortfolioResponse
 from app.openapi import error_doc, error_example
 from app.services.portfolio_service import PortfolioService
 
@@ -32,7 +38,7 @@ def validate_portfolio_id(portfolio_id: str) -> None:
 
 @router.get(
     "/portfolios/{portfolio_id}",
-    response_model=PortfolioMetadata,
+    response_model=PortfolioResponse,
     summary="Portfolio metadata (sourced from the CRM)",
     description=(
         "Calls the CRM, finds the account by `acct_ref` wherever the CRM nests it, and maps the legacy fields "
@@ -42,7 +48,11 @@ def validate_portfolio_id(portfolio_id: str) -> None:
         "a timeout."
     ),
     responses={
-        400: error_doc("The id is not a valid portfolio id. The CRM is not called.", INVALID_ID_EXAMPLE),
+        400: error_doc(
+            "The id is not a valid portfolio id, or currency is not CAD or USD. The CRM is not called.",
+            INVALID_ID_EXAMPLE,
+            UNSUPPORTED_CURRENCY_EXAMPLE,
+        ),
         404: error_doc("The CRM has no account with this id.", NOT_FOUND_EXAMPLE),
         502: error_doc(
             "The CRM answered with data that could not be interpreted safely.",
@@ -73,7 +83,10 @@ def validate_portfolio_id(portfolio_id: str) -> None:
 )
 async def get_portfolio(
     portfolio_id: str = Path(description="Portfolio id, such as `P-9001`", openapi_examples=PORTFOLIO_ID_EXAMPLES),
+    currency: str | None = Query(
+        default=None, description=CURRENCY_QUERY_DESCRIPTION, openapi_examples=CURRENCY_EXAMPLES
+    ),
     service: PortfolioService = Depends(get_portfolio_service),
-) -> PortfolioMetadata:
+) -> PortfolioResponse:
     validate_portfolio_id(portfolio_id)
-    return await service.get_metadata(portfolio_id)
+    return await service.get_portfolio(portfolio_id, parse_currency(currency))

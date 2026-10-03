@@ -45,6 +45,8 @@ from a parameter's dropdown, then press **Execute**.
 ### Conventions
 - Every endpoint except the health checks needs an `Authorization: Bearer <token>` header.
 - JSON fields are camelCase. Money is in CAD unless a response says otherwise.
+- Add `?currency=USD` to the portfolio, holdings or history endpoint to convert every money field. Each \
+response says which `currency` and `exchangeRate` it used; quantities and percentages never change.
 - Percentages are decimals: `0.0032` means 0.32%.
 - Dates are `YYYY-MM-DD`. Timestamps are ISO 8601 in UTC and end in `Z`.
 - Every response has an `X-Request-ID` header. Send your own (up to 128 letters, digits, `.`, `_` or `-`) to \
@@ -56,7 +58,8 @@ header) and sometimes `details`.
 
 | Status | `error` | Meaning |
 | --- | --- | --- |
-| 400 | `invalid_portfolio_id`, `invalid_range` | Bad input. An invalid id never reaches the CRM. |
+| 400 | `invalid_portfolio_id`, `invalid_range`, `unsupported_currency` | Bad input. An invalid id or currency \
+never reaches the CRM. |
 | 401 | `unauthorized` | The `Authorization` header is missing, isn't `Bearer <token>`, or has the wrong token. |
 | 404 | `portfolio_not_found` | No portfolio has this id. |
 | 502 | `crm_bad_response` | The CRM sent data we can't interpret safely. |
