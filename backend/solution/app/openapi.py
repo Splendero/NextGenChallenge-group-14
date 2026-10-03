@@ -23,6 +23,7 @@ OPENAPI_TAGS = [
         "on the server.",
     },
     {"name": "history", "description": "**Task 3.** Daily total market value for the performance chart."},
+    {"name": "allocation", "description": "**Task 5.** Portfolio market value broken down by asset class."},
     {"name": "health", "description": "Liveness and readiness checks for monitoring."},
 ]
 
