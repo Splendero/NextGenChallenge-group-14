@@ -77,7 +77,7 @@ def fake_crm() -> FakeCrm:
 def app(fake_crm):
     app = create_app(make_settings())
     app.dependency_overrides[get_crm_client] = lambda: fake_crm
-    app.dependency_overrides[get_history_service] = lambda: HistoryService({}, {"P-9001"})
+    app.dependency_overrides[get_history_service] = lambda: HistoryService({}, {"P-9001": "CAD"})
     return app
 
 
