@@ -9,18 +9,21 @@ from dataclasses import dataclass
 
 from app.data import seed
 from app.errors import UnsupportedCurrency
+from app.openapi import error_example
 
 SUPPORTED_CURRENCIES = ("CAD", "USD")
 CURRENCY_QUERY_DESCRIPTION = (
     "CAD or USD (exact match). Converts every money field; quantities and percentages are unchanged. "
     "Defaults to the portfolio's native currency."
 )
-UNSUPPORTED_CURRENCY_EXAMPLE = {
-    "error": "unsupported_currency",
-    "message": "currency must be one of CAD, USD.",
-    "requestId": "...",
-    "details": {"currency": "EUR", "allowed": ["CAD", "USD"]},
+CURRENCY_EXAMPLES = {
+    "CAD": {"summary": "CAD: native values, exchangeRate 1.0 (same as leaving it out)", "value": "CAD"},
+    "USD": {"summary": "USD: money fields x 0.73", "value": "USD"},
+    "invalid": {"summary": "EUR: not supported (400)", "value": "EUR"},
 }
+UNSUPPORTED_CURRENCY_EXAMPLE = error_example(
+    "unsupported_currency", "currency must be one of CAD, USD.", {"currency": "EUR", "allowed": ["CAD", "USD"]}
+)
 
 
 class NoExchangeRate(Exception):

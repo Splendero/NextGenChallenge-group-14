@@ -48,6 +48,11 @@ class HistoryUnavailable(ApiError):
     error = "history_unavailable"
 
 
+class Unauthorized(ApiError):
+    status_code = 401
+    error = "unauthorized"
+
+
 class UnsupportedCurrency(ApiError):
     status_code = 400
     error = "unsupported_currency"

@@ -10,7 +10,7 @@ from app.dependencies import get_crm_client, get_history_service
 from app.errors import UnsupportedCurrency
 from app.main import create_app
 from app.services.history_service import HistoryService, Snapshot
-from tests.conftest import load_fixture, make_settings
+from tests.conftest import AUTH_HEADERS, load_fixture, make_settings
 from tests.test_portfolios_api import FakeCrm, assert_error
 
 CAD_TO_USD = 0.73
@@ -83,7 +83,7 @@ def client(fake_crm):
     )
     app.dependency_overrides[get_crm_client] = lambda: fake_crm
     app.dependency_overrides[get_history_service] = lambda: history
-    with TestClient(app, raise_server_exceptions=False) as test_client:
+    with TestClient(app, raise_server_exceptions=False, headers=AUTH_HEADERS) as test_client:
         yield test_client
 
 
