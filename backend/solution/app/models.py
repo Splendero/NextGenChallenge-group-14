@@ -64,11 +64,44 @@ class Holding(ApiModel):
     unrealized_gain_loss: float
     day_change_amount: float
     day_change_percent: float | None = Field(description="Decimal; null when the previous close is 0")
+    currency: str = Field(description="Currency of the money fields in this item (Task 7)")
+    exchange_rate: float = Field(description="Rate applied from the portfolio's native currency; 1.0 if unconverted")
 
 
 # --- Task 3 ---
 class PerformanceSnapshot(ApiModel):
-    model_config = ConfigDict(json_schema_extra={"example": {"date": "2026-10-03", "marketValue": 48930.0}})
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {"date": "2026-10-03", "marketValue": 48930.0, "currency": "CAD", "exchangeRate": 1.0}
+        }
+    )
 
     date: str = Field(description="Snapshot date, YYYY-MM-DD")
     market_value: float = Field(description="Total portfolio market value on that date")
+    currency: str = Field(description="Currency of marketValue (Task 7)")
+    exchange_rate: float = Field(description="Rate applied from the portfolio's native currency; 1.0 if unconverted")
+
+
+# --- Task 7 ---
+class PortfolioResponse(PortfolioMetadata):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "portfolioId": "P-9001",
+                "clientId": "abc123",
+                "label": "Taxable Brokerage",
+                "currency": "USD",
+                "totalMarketValue": 35718.9,
+                "dayChangeAmount": 21.9,
+                "dayChangePercent": 0.0006134969325153375,
+                "totalReturnSinceInception": 0.187,
+                "asOf": "2026-10-03T16:00:00Z",
+                "warnings": [],
+                "exchangeRate": 0.73,
+            }
+        }
+    )
+
+    exchange_rate: float = Field(
+        description="Rate applied to money fields, from the CRM's currency to `currency`; 1.0 if unconverted"
+    )

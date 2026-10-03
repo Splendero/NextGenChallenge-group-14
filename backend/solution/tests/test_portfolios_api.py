@@ -65,6 +65,7 @@ def test_maps_successful_crm_response(client, fake_crm):
         "totalReturnSinceInception": 0.187,
         "asOf": "2026-10-03T16:00:00Z",
         "warnings": [],
+        "exchangeRate": 1.0,
     }
     assert response.headers["X-Request-ID"]
 

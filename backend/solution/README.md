@@ -1,6 +1,6 @@
 # Portfolio Dashboard Backend (Python / FastAPI)
 
-Status: **Task 1 (Portfolio Metadata via CRM Integration)**, **Task 2 (Holdings)** and **Task 3 (Performance History)** are complete. Other tasks are not started yet. The code is structured for Task 9 (caching) and Task 4 (auth) to slot in; see "Extending" below.
+Status: **Task 1 (Portfolio Metadata via CRM Integration)**, **Task 2 (Holdings)**, **Task 3 (Performance History)** and **Task 7 (Currency Display)** are complete. Other tasks are not started yet. The code is structured for Task 9 (caching) and Task 4 (auth) to slot in; see "Extending" below.
 
 Working on this as a team? Read [TEAM-GUIDE.md](TEAM-GUIDE.md) first. It covers the pinned stack, who owns which files, coding conventions, and the decisions we need to agree on.
 
@@ -57,6 +57,7 @@ pytest -m integration         # only the live tests (start node backend/mock-crm
 | `tests/test_integration_mock_crm.py` | Live against the supplied mock: all modes, call counts, and 10 requests in `auto` mode without a crash or hang. |
 | `tests/test_holdings.py` | Holdings calculations without HTTP (P-9001 values, zero quantity, zero previous close, empty portfolio) and the endpoint (all 12 camelCase fields, JSON `null`, `[]`, 404). |
 | `tests/test_history.py` | Task 3, with today pinned and made-up data (no generated file needed): every range's window, month-end and leap-year clamping, gaps, future dates, short history, range parsing, file loading, and the HTTP layer (400/404/503, empty portfolio, OpenAPI). |
+| `tests/test_currency.py` | Task 7: currency parsing and rates, USD on all three endpoints (money fields converted, quantities and percentages not), native values when omitted, totals agreeing across endpoints, 400 on every endpoint, null money fields, USD and unconvertible CRM accounts. |
 
 ## `GET /portfolios/{id}`
 
@@ -73,7 +74,8 @@ Successful response (`200`):
   "dayChangePercent": 0.0006134969325153375,
   "totalReturnSinceInception": 0.187,
   "asOf": "2026-10-03T16:00:00Z",
-  "warnings": []
+  "warnings": [],
+  "exchangeRate": 1.0
 }
 ```
 
@@ -112,7 +114,9 @@ Example (`P-9002`):
     "weightPercent": 1.0,
     "unrealizedGainLoss": 100.0,
     "dayChangeAmount": 500.0,
-    "dayChangePercent": null
+    "dayChangePercent": null,
+    "currency": "CAD",
+    "exchangeRate": 1.0
   }
 ]
 ```
@@ -197,8 +201,8 @@ curl 'localhost:3000/portfolios/P-9001/performance-history?range=1D'
 
 ```json
 [
-  { "date": "2026-10-02", "marketValue": 48917.8 },
-  { "date": "2026-10-03", "marketValue": 48930.0 }
+  { "date": "2026-10-02", "marketValue": 48917.8, "currency": "CAD", "exchangeRate": 1.0 },
+  { "date": "2026-10-03", "marketValue": 48930.0, "currency": "CAD", "exchangeRate": 1.0 }
 ]
 ```
 
@@ -223,13 +227,43 @@ The data comes from `backend/fixtures/performance-history.json`, which `node bac
 - **A missing history file doesn't stop the server**, so `/portfolios/{id}` keeps working and only this endpoint returns 503. Once loaded, the file is cached for the life of the process, so **restart the backend after regenerating it** (for example the next day, so `1D` and `YTD` line up with the new date).
 - **Until the shared seed loader (`app/data/seed.py`, see [TEAM-GUIDE.md](TEAM-GUIDE.md)) exists**, `app/services/history_service.py` reads both JSON files itself. Switching over only touches `get_history_service` in `app/dependencies.py`.
 
+## Currency display: `?currency=CAD|USD` (Task 7)
+
+`GET /portfolios/{id}`, `GET /portfolios/{id}/holdings` and `GET /portfolios/{id}/performance-history` accept an optional `currency` parameter. Every response (each item, for the two array endpoints) says which currency its money is in and which rate was applied:
+
+```sh
+curl 'localhost:3000/portfolios/P-9001/holdings?currency=USD'
+```
+
+```json
+[
+  { "ticker": "AAPL", "quantity": 120.0, "price": 166.075, "marketValue": 19929.0, "weightPercent": 0.5579, "currency": "USD", "exchangeRate": 0.73, "...": "..." }
+]
+```
+
+| Situation | Status | `error` |
+| --- | --- | --- |
+| `currency` isn't exactly `CAD` or `USD` (`details.allowed` lists them) | 400 | `unsupported_currency` |
+
+**Decisions:**
+
+- **What gets converted:** money only. That's `totalMarketValue` and `dayChangeAmount` on the portfolio; `costBasisPerShare`, `price`, `previousClosePrice`, `marketValue`, `unrealizedGainLoss` and `dayChangeAmount` on holdings; `marketValue` in history. Quantities and every percentage are unchanged.
+- **Omitted means native:** no `currency` (or the portfolio's own currency) returns unconverted values with `exchangeRate: 1.0`.
+- **The rate** is `CADtoUSD` from `seed.json` (0.73), read through `app/data/seed.py`. USD to CAD uses its inverse.
+- **No rounding:** every money field is multiplied by the same rate, so converted holdings still add up to the converted portfolio total (`P-9001`: 48930 CAD is 35718.9 USD on both endpoints). Clients round for display.
+- **Metadata on arrays:** `currency` and `exchangeRate` are added to each item, keeping the responses plain arrays as the requirements show.
+- **Exact match**, like `range`: `usd` or an empty `currency=` returns 400 rather than falling back. The parameter is checked before anything else is looked up, so a bad currency never calls the CRM.
+- **CRM accounts in another currency:** a USD account converts to CAD with the inverse rate. If the CRM reports a currency we have no rate for (say EUR), the values come back unconverted in that currency, with `exchangeRate: 1.0` and a warning, rather than failing the request.
+- **Task 9 can cache native data:** `PortfolioService.get_metadata` still returns unconverted CRM data; conversion happens afterwards in `get_portfolio`.
+
 ## Project layout
 
 ```text
 app/
   main.py                    create_app(): lifespan (shared HTTP client), request-id middleware, routers
   config.py                  Settings from env vars
-  models.py                  PortfolioMetadata, Holding, PerformanceSnapshot, ErrorResponse (camelCase on the wire)
+  models.py                  PortfolioMetadata, PortfolioResponse, Holding, PerformanceSnapshot, ErrorResponse (camelCase on the wire)
+  currency.py                Task 7: ?currency= parsing and CAD/USD rates
   errors.py                  Exception -> HTTP status + error body
   request_context.py         Request ids and logging
   dependencies.py            FastAPI dependency wiring
@@ -251,11 +285,10 @@ tests/                       pytest suites and fixtures/crm/
 
 - **Task 9 (cache):** wrap `PortfolioService.get_metadata`. Cache the mapped `PortfolioMetadata` per id. On `CrmTimeout` or `CrmUnavailable` with an expired entry, serve it with `stale: true`. `CrmNotFound` and `CrmBadResponse` should probably not fall back to stale data; decide and document.
 - **Task 4 (auth):** add a dependency or middleware before the routers. `/health` should probably stay public. The API tests in `tests/test_history.py` will then need the token header too.
-- **Task 7 (currency):** convert in the route or service after mapping; `currency` is already in the response. For history, convert in `_to_response` in `app/services/history_service.py`, which builds every snapshot.
-
 ## Unfinished / known limitations
 
-- Only Tasks 1, 2 and 3 are implemented.
+- Only Tasks 1, 2, 3 and 7 are implemented.
 - There's no authentication yet, so the endpoints are open (Task 4).
 - There's no caching yet (Task 9): every request calls the CRM.
-- Performance history is read once per process, so a regenerated file needs a restart. History values aren't converted to other currencies yet (Task 7).
+- Performance history is read once per process, so a regenerated file needs a restart.
+- Only CAD and USD are supported, with one fixed rate from the seed data.

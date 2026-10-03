@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, Query
 
+from app.currency import CURRENCY_QUERY_DESCRIPTION, parse_currency
 from app.dependencies import get_history_service
 from app.models import PerformanceSnapshot
 from app.routes.portfolios import error_doc, validate_portfolio_id
@@ -14,7 +15,8 @@ router = APIRouter(tags=["history"])
     summary="Daily total market value for the performance chart, oldest first",
     responses={
         400: error_doc(
-            "The id is not a valid portfolio id (invalid_portfolio_id), or range is not one of the allowed values.",
+            "The id is not a valid portfolio id (invalid_portfolio_id), range is not one of the allowed values, "
+            "or currency is not CAD or USD (unsupported_currency).",
             {
                 "error": "invalid_range",
                 "message": "range must be one of 1D, 1M, YTD, 1Y, All.",
@@ -39,7 +41,8 @@ async def get_performance_history(
         alias="range",
         description="One of 1D, 1M, YTD, 1Y, All (exact match). Defaults to All. Every range ends today (UTC).",
     ),
+    currency: str | None = Query(default=None, description=CURRENCY_QUERY_DESCRIPTION),
     service: HistoryService = Depends(get_history_service),
 ) -> list[PerformanceSnapshot]:
     validate_portfolio_id(portfolio_id)
-    return service.get_history(portfolio_id, parse_range(range_))
+    return service.get_history(portfolio_id, parse_range(range_), parse_currency(currency))

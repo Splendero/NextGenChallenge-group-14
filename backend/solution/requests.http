@@ -91,3 +91,20 @@ GET {{backend}}/portfolios/P-9001/performance-history?range=1W
 
 ### Unknown portfolio -> 404
 GET {{backend}}/portfolios/UNKNOWN/performance-history
+
+### --- Task 7: currency display (money fields converted; quantities and percentages unchanged) ---
+
+### Portfolio total in USD (48930 CAD -> 35718.9 USD)
+GET {{backend}}/portfolios/P-9001?currency=USD
+
+### Holdings in USD: marketValue values add up to the same 35718.9
+GET {{backend}}/portfolios/P-9001/holdings?currency=USD
+
+### History in USD
+GET {{backend}}/portfolios/P-9001/performance-history?range=1M&currency=USD
+
+### Omitted or CAD -> native values, exchangeRate 1.0
+GET {{backend}}/portfolios/P-9001/holdings?currency=CAD
+
+### Unsupported currency -> 400 unsupported_currency (no silent fallback)
+GET {{backend}}/portfolios/P-9001/holdings?currency=EUR

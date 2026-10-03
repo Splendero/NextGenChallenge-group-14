@@ -1,10 +1,11 @@
 import re
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
+from app.currency import CURRENCY_QUERY_DESCRIPTION, UNSUPPORTED_CURRENCY_EXAMPLE, parse_currency
 from app.dependencies import get_portfolio_service
 from app.errors import InvalidPortfolioId
-from app.models import ErrorResponse, PortfolioMetadata
+from app.models import ErrorResponse, PortfolioResponse
 from app.services.portfolio_service import PortfolioService
 
 router = APIRouter(tags=["portfolios"])
@@ -26,12 +27,13 @@ def validate_portfolio_id(portfolio_id: str) -> None:
 
 @router.get(
     "/portfolios/{portfolio_id}",
-    response_model=PortfolioMetadata,
+    response_model=PortfolioResponse,
     summary="Portfolio metadata (sourced from the CRM)",
     responses={
         400: error_doc(
-            "The id is not a valid portfolio id. The CRM is not called.",
-            {"error": "invalid_portfolio_id", "message": "...", "requestId": "..."},
+            "The id is not a valid portfolio id (invalid_portfolio_id), or currency is not CAD or USD. "
+            "The CRM is not called.",
+            UNSUPPORTED_CURRENCY_EXAMPLE,
         ),
         404: error_doc(
             "The CRM has no account with this id.",
@@ -52,7 +54,9 @@ def validate_portfolio_id(portfolio_id: str) -> None:
     },
 )
 async def get_portfolio(
-    portfolio_id: str, service: PortfolioService = Depends(get_portfolio_service)
-) -> PortfolioMetadata:
+    portfolio_id: str,
+    currency: str | None = Query(default=None, description=CURRENCY_QUERY_DESCRIPTION),
+    service: PortfolioService = Depends(get_portfolio_service),
+) -> PortfolioResponse:
     validate_portfolio_id(portfolio_id)
-    return await service.get_metadata(portfolio_id)
+    return await service.get_portfolio(portfolio_id, parse_currency(currency))

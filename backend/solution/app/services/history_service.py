@@ -9,13 +9,14 @@ Rules:
 import calendar
 import json
 import logging
-from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
 
+from app.currency import Conversion, conversion
 from app.errors import HistoryUnavailable, InvalidRange, PortfolioNotFound
 from app.models import PerformanceSnapshot
 
@@ -95,29 +96,33 @@ def load_history_file(path: Path) -> dict[str, tuple[Snapshot, ...]]:
 
 
 @lru_cache
-def load_portfolio_ids(path: Path) -> frozenset[str]:
-    """Every portfolio in seed.json. A known id with no history gets [], an unknown id gets 404."""
+def load_portfolio_currencies(path: Path) -> dict[str, str]:
+    """Native currency of every portfolio in seed.json. A known id with no history gets [], an unknown id 404."""
     seed = json.loads(path.read_text())
-    return frozenset(portfolio["portfolioId"] for portfolio in seed["portfolios"])
+    return {portfolio["portfolioId"]: portfolio["currency"] for portfolio in seed["portfolios"]}
 
 
 class HistoryService:
     def __init__(
         self,
         history: Mapping[str, Sequence[Snapshot]],
-        portfolio_ids: Collection[str],
+        currencies: Mapping[str, str],
         *,
         today: Callable[[], date] = utc_today,
     ):
         self._history = history
-        self._portfolio_ids = portfolio_ids
+        self._currencies = currencies
         self._today = today
 
-    def get_history(self, portfolio_id: str, history_range: HistoryRange) -> list[PerformanceSnapshot]:
-        if portfolio_id not in self._portfolio_ids:
+    def get_history(
+        self, portfolio_id: str, history_range: HistoryRange, currency: str | None = None
+    ) -> list[PerformanceSnapshot]:
+        native = self._currencies.get(portfolio_id)
+        if native is None:
             raise PortfolioNotFound(f"No portfolio found with id '{portfolio_id}'.")
+        rate = conversion(native, currency)
         snapshots = filter_snapshots(self._history.get(portfolio_id, ()), history_range, self._today())
-        return [_to_response(snapshot) for snapshot in snapshots]
+        return [_to_response(snapshot, rate) for snapshot in snapshots]
 
 
 def _months_before(day: date, months: int) -> date:
@@ -127,5 +132,10 @@ def _months_before(day: date, months: int) -> date:
     return date(year, month, min(day.day, calendar.monthrange(year, month)[1]))
 
 
-def _to_response(snapshot: Snapshot) -> PerformanceSnapshot:
-    return PerformanceSnapshot(date=snapshot.day.isoformat(), market_value=snapshot.market_value)
+def _to_response(snapshot: Snapshot, rate: Conversion) -> PerformanceSnapshot:
+    return PerformanceSnapshot(
+        date=snapshot.day.isoformat(),
+        market_value=rate.convert(snapshot.market_value),
+        currency=rate.currency,
+        exchange_rate=rate.rate,
+    )
